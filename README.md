@@ -4,19 +4,6 @@
 
 A production-ready microservices ecosystem designed to handle **millions of requests per minute** with MercadoLibre's APIs. Built with modern patterns like Circuit Breakers, Rate Limiting, Event-Driven Architecture, and comprehensive observability.
 
-## 🎯 **Demo for MercadoLibre Interview**
-
-This project demonstrates enterprise-level microservices architecture patterns specifically designed for **high-scale API integration** scenarios common at MercadoLibre.
-
-### **Key Demonstrable Features:**
-- ✅ **10M+ RPM Ready** - Rate limiting, circuit breakers, caching
-- ✅ **OAuth Flow** - Complete ML OAuth integration 
-- ✅ **Circuit Breakers** - Resilience patterns for ML API failures
-- ✅ **Event-Driven** - Kafka-based async communication
-- ✅ **Observability** - Prometheus + Grafana monitoring
-- ✅ **Auto-Scaling** - Designed for Kubernetes deployment
-
----
 
 ## 🏗️ **Architecture Overview**
 
@@ -165,55 +152,6 @@ if (rateLimiter.isExceeded(userId)) {
 // Caching Strategy
 const cached = await redis.get(`ml_user:${userId}`);
 if (cached) return cached; // Sub-millisecond response
-```
-
----
-
-## 🎯 **Demo Scenarios for Interview**
-
-### **Scenario 1: Handle ML API Outage**
-```bash
-# Simulate ML API failure
-curl -X POST localhost/api/ml/items/MLA123 -d '{"available_quantity": 0}'
-
-# Watch circuit breaker open
-curl localhost/api/ml/health
-# Shows: "circuit_breaker": {"state": "OPEN"}
-
-# Graceful degradation with cached data
-curl localhost/api/ml/items/MLA123
-# Returns cached product data instead of failing
-```
-
-### **Scenario 2: Rate Limiting in Action**
-```bash
-# Burst test - should hit rate limit
-for i in {1..150}; do 
-  curl localhost/api/ml/user/me & 
-done
-
-# Response: HTTP 429 Too Many Requests
-# Headers show: X-RateLimit-Remaining: 0
-```
-
-### **Scenario 3: Auto-Scaling Metrics**
-```bash
-# Generate load
-npm run performance:test
-
-# Watch metrics in Grafana
-open http://localhost:3000
-# Dashboard shows: CPU, Memory, Request Rate, Error Rate
-```
-
-### **Scenario 4: Event-Driven Architecture**
-```bash
-# Update product stock
-curl -X PUT localhost/api/ml/items/MLA123 \
-  -d '{"available_quantity": 5}'
-
-# Event flows through Kafka
-# Triggers: analytics update, low-stock alert, inventory sync
 ```
 
 ---
@@ -397,22 +335,6 @@ npm run security:scan
 
 ---
 
-## 🎯 **Interview Talking Points**
-
-### **Scalability**
-*"This architecture can handle 10M+ requests/minute through horizontal scaling, intelligent caching, and circuit breakers that prevent cascading failures."*
-
-### **Resilience** 
-*"When MercadoLibre API goes down, our circuit breaker opens and we serve cached responses, maintaining 99.9% uptime for our users."*
-
-### **Performance**
-*"P99 latency under 100ms for internal services, with Redis caching providing sub-millisecond responses for frequently accessed data."*
-
-### **Monitoring**
-*"Complete observability with Prometheus metrics, Grafana dashboards, and alerting that notifies us before users experience issues."*
-
----
-
 ## 📞 **Support & Documentation**
 
 ### **API Documentation**
@@ -434,4 +356,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Built for MercadoLibre Interview - Demonstrating Enterprise Microservices Architecture** 🚀
+**Built for MercadoLibre Integration - Enterprise Microservices Architecture** 🚀
