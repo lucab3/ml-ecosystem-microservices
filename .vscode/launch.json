@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug User Service",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/services/user-service/src/server.js",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Integration Service",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/services/integration-service/src/server.js",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "console": "integratedTerminal"
+        }
+    ]
+}

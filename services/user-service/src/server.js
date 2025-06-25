@@ -11,19 +11,28 @@ const SERVICE_NAME = process.env.SERVICE_NAME || 'user-service';
 // =================== INICIALIZACIÓN ===================
 async function startServer() {
   try {
-    // Conectar a PostgreSQL
-    logger.info('🔗 Conectando a PostgreSQL...');
-    await database.connect();
-    logger.info('✅ PostgreSQL conectado');
+    // Use mock services in development
+    const useMockServices = process.env.USE_MOCK_DB === 'true' || process.env.NODE_ENV === 'development';
+    
+    if (useMockServices) {
+      logger.info('🧪 Using mock services for development');
+      logger.info('✅ Mock database ready');
+      logger.info('✅ Mock Redis ready');
+    } else {
+      // Conectar a PostgreSQL
+      logger.info('🔗 Conectando a PostgreSQL...');
+      await database.connect();
+      logger.info('✅ PostgreSQL conectado');
 
-    // Conectar a Redis
-    logger.info('🔗 Conectando a Redis...');
-    await redis.connect();
-    logger.info('✅ Redis conectado');
+      // Conectar a Redis
+      logger.info('🔗 Conectando a Redis...');
+      await redis.connect();
+      logger.info('✅ Redis conectado');
 
-    // Inicializar tablas si no existen
-    await database.initTables();
-    logger.info('✅ Tablas de base de datos inicializadas');
+      // Inicializar tablas si no existen
+      await database.initTables();
+      logger.info('✅ Tablas de base de datos inicializadas');
+    }
 
     // Iniciar servidor
     const server = app.listen(PORT, () => {
@@ -42,18 +51,22 @@ async function startServer() {
       server.close(async () => {
         logger.info('🔌 Servidor HTTP cerrado');
         
-        try {
-          await database.disconnect();
-          logger.info('🔌 PostgreSQL desconectado');
-        } catch (error) {
-          logger.error('❌ Error cerrando PostgreSQL:', error);
-        }
+        if (!useMockServices) {
+          try {
+            await database.disconnect();
+            logger.info('🔌 PostgreSQL desconectado');
+          } catch (error) {
+            logger.error('❌ Error cerrando PostgreSQL:', error);
+          }
 
-        try {
-          await redis.disconnect();
-          logger.info('🔌 Redis desconectado');
-        } catch (error) {
-          logger.error('❌ Error cerrando Redis:', error);
+          try {
+            await redis.disconnect();
+            logger.info('🔌 Redis desconectado');
+          } catch (error) {
+            logger.error('❌ Error cerrando Redis:', error);
+          }
+        } else {
+          logger.info('🔌 Mock services disconnected');
         }
 
         logger.info('👋 Cierre limpio completado');

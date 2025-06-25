@@ -9,8 +9,8 @@ const logger = require('./utils/logger');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const healthRoutes = require('./routes/health');
-const errorHandler = require('./middleware/errorHandler');
-const metricsMiddleware = require('./middleware/metrics');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { metricsMiddleware } = require('./middleware/metrics');
 
 const app = express();
 
@@ -75,9 +75,15 @@ app.use((req, res, next) => {
 
 // =================== RUTAS ===================
 app.use('/health', healthRoutes);
-app.use('/metrics', (req, res) => {
-  res.set('Content-Type', prometheus.register.contentType);
-  res.end(prometheus.register.metrics());
+app.get('/metrics', async (req, res) => {
+  try {
+    const { getMetrics } = require('./middleware/metrics');
+    const metrics = await getMetrics();
+    res.set('Content-Type', 'text/plain');
+    res.send(metrics);
+  } catch (error) {
+    res.status(500).send('Error collecting metrics');
+  }
 });
 
 app.use('/api/auth', authRoutes);
@@ -87,13 +93,6 @@ app.use('/api/users', userRoutes);
 app.use(errorHandler);
 
 // =================== 404 HANDLER ===================
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Not Found',
-    message: `Route ${req.originalUrl} not found`,
-    service: 'user-service',
-    timestamp: new Date().toISOString()
-  });
-});
+app.use('*', notFoundHandler);
 
 module.exports = app;

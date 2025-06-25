@@ -4,11 +4,11 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
-const logger = require('./utils/mlRateLimiter');
+const logger = require('./utils/logger');
 const mlRoutes = require('./routes/ml-api');
 const healthRoutes = require('./routes/health');
 const errorHandler = require('./middleware/errorHandler');
-const authMiddleware = require('./middleware/circuitBreaker');
+const { authMiddleware } = require('./middleware/auth');
 const circuitBreaker = require('./middleware/circuitBreaker');
 
 const app = express();

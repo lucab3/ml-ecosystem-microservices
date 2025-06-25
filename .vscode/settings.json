@@ -1,0 +1,19 @@
+{
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "javascript.preferences.quoteStyle": "single",
+    "typescript.preferences.quoteStyle": "single",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": true
+    },
+    "files.exclude": {
+        "**/node_modules": true,
+        "**/coverage": true,
+        "**/.nyc_output": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/coverage": true
+    }
+}

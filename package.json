@@ -1,0 +1,58 @@
+{
+  "name": "ml-ecosystem-microservices",
+  "version": "1.0.0",
+  "description": "Scalable microservices architecture for MercadoLibre integration",
+  "private": true,
+  "scripts": {
+    "start": "docker-compose up",
+    "start:dev": "docker-compose -f docker-compose.yml up --build",
+    "start:prod": "docker-compose -f docker-compose.prod.yml up",
+    "stop": "docker-compose down",
+    "test": "npm run test:services",
+    "test:services": "cd services/user-service && npm test && cd ../integration-service && npm test",
+    "test:integration": "npm run test:e2e",
+    "test:e2e": "docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit",
+    "lint": "npm run lint:services",
+    "lint:services": "cd services/user-service && npm run lint && cd ../integration-service && npm run lint",
+    "build": "docker-compose build",
+    "deploy": "npm run build && npm run start:prod",
+    "logs": "docker-compose logs -f",
+    "health": "curl -f http://localhost/health",
+    "install:services": "cd services/user-service && npm install && cd ../integration-service && npm install",
+    "validate": "./scripts/quick-validate.sh",
+    "setup:dev": "./scripts/dev-setup.sh",
+    "test:local": "./scripts/local-test.sh",
+    "test:lite": "./scripts/test-lite.sh",
+    "test:mock": "./scripts/test-mock-services.sh",
+    "dev": "concurrently \"npm run dev:user\" \"npm run dev:integration\"",
+    "dev:user": "cd services/user-service && npm run dev",
+    "dev:integration": "cd services/integration-service && npm run dev",
+    "setup": "./scripts/dev-setup.sh",
+    "setup:local": "./scripts/setup-local-env.sh",
+    "start:local": "./scripts/start-simple.sh",
+    "stop:local": "./scripts/stop-dev.sh",
+    "dev:mock": "node scripts/Dockerfile.mock-ml && npm run start:local"
+  },
+  "workspaces": [
+    "services/*"
+  ],
+  "keywords": [
+    "microservices",
+    "mercadolibre",
+    "api",
+    "nodejs",
+    "docker",
+    "kubernetes"
+  ],
+  "author": "Luca Belotti <luca_belotti@hotmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nock": "^14.0.5",
+    "wait-on": "^7.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

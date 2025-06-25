@@ -1,0 +1,437 @@
+# ===========================================
+# ML ECOSYSTEM MICROSERVICES - Testing Docker Compose
+# ===========================================
+
+version: '3.8'
+
+services:
+  # ===========================================
+  # TEST DATABASES
+  # ===========================================
+  
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: ml_postgres_test
+    restart: no
+    environment:
+      POSTGRES_DB: ml_ecosystem_test
+      POSTGRES_USER: ml_test_user
+      POSTGRES_PASSWORD: ml_test_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./infrastructure/databases/postgresql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - ml_test_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ml_test_user -d ml_ecosystem_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  mongodb-test:
+    image: mongo:7
+    container_name: ml_mongodb_test
+    restart: no
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ml_test_admin
+      MONGO_INITDB_ROOT_PASSWORD: ml_test_admin_password
+      MONGO_INITDB_DATABASE: ml_ecosystem_logs_test
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_test_data:/data/db
+      - ./infrastructure/databases/mongodb/init.js:/docker-entrypoint-initdb.d/init.js:ro
+    networks:
+      - ml_test_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/ml_ecosystem_logs_test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: ml_redis_test
+    restart: no
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_test_data:/data
+    networks:
+      - ml_test_network
+    command: redis-server --requirepass ml_test_redis_password
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+  kafka-test:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: ml_kafka_test
+    restart: no
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper-test:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-test:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    ports:
+      - "9093:9093"
+    depends_on:
+      - zookeeper-test
+    networks:
+      - ml_test_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  zookeeper-test:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: ml_zookeeper_test
+    restart: no
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - ml_test_network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+  # ===========================================
+  # TEST SERVICES
+  # ===========================================
+  
+  user-service-test:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile.test
+    container_name: ml_user_service_test
+    restart: no
+    environment:
+      NODE_ENV: test
+      PORT: 3001
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_NAME: ml_ecosystem_test
+      DB_USER: ml_test_user
+      DB_PASSWORD: ml_test_password
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ml_test_redis_password
+      KAFKA_BROKERS: kafka-test:9093
+      JWT_SECRET: test-jwt-secret
+      LOG_LEVEL: silent
+    volumes:
+      - ./services/user-service:/app
+      - /app/node_modules
+    networks:
+      - ml_test_network
+    depends_on:
+      - postgres-test
+      - redis-test
+      - kafka-test
+    command: npm run test:ci
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  integration-service-test:
+    build:
+      context: ./services/integration-service
+      dockerfile: Dockerfile.test
+    container_name: ml_integration_service_test
+    restart: no
+    environment:
+      NODE_ENV: test
+      PORT: 3002
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_NAME: ml_ecosystem_test
+      DB_USER: ml_test_user
+      DB_PASSWORD: ml_test_password
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ml_test_redis_password
+      KAFKA_BROKERS: kafka-test:9093
+      LOG_LEVEL: silent
+    volumes:
+      - ./services/integration-service:/app
+      - /app/node_modules
+    networks:
+      - ml_test_network
+    depends_on:
+      - postgres-test
+      - redis-test
+      - kafka-test
+    command: npm run test:ci
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  catalog-service-test:
+    build:
+      context: ./services/catalog-service
+      dockerfile: Dockerfile.test
+    container_name: ml_catalog_service_test
+    restart: no
+    environment:
+      NODE_ENV: test
+      PORT: 3003
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_NAME: ml_ecosystem_test
+      DB_USER: ml_test_user
+      DB_PASSWORD: ml_test_password
+      MONGODB_HOST: mongodb-test
+      MONGODB_PORT: 27017
+      MONGODB_DB: ml_ecosystem_logs_test
+      MONGODB_USER: ml_test_admin
+      MONGODB_PASSWORD: ml_test_admin_password
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ml_test_redis_password
+      KAFKA_BROKERS: kafka-test:9093
+      LOG_LEVEL: silent
+    volumes:
+      - ./services/catalog-service:/app
+      - /app/node_modules
+    networks:
+      - ml_test_network
+    depends_on:
+      - postgres-test
+      - mongodb-test
+      - redis-test
+      - kafka-test
+    command: npm run test:ci
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  inventory-service-test:
+    build:
+      context: ./services/inventory-service
+      dockerfile: Dockerfile.test
+    container_name: ml_inventory_service_test
+    restart: no
+    environment:
+      NODE_ENV: test
+      PORT: 3004
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_NAME: ml_ecosystem_test
+      DB_USER: ml_test_user
+      DB_PASSWORD: ml_test_password
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ml_test_redis_password
+      KAFKA_BROKERS: kafka-test:9093
+      LOG_LEVEL: silent
+    volumes:
+      - ./services/inventory-service:/app
+      - /app/node_modules
+    networks:
+      - ml_test_network
+    depends_on:
+      - postgres-test
+      - redis-test
+      - kafka-test
+    command: npm run test:ci
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  notification-service-test:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile.test
+    container_name: ml_notification_service_test
+    restart: no
+    environment:
+      NODE_ENV: test
+      PORT: 3005
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_NAME: ml_ecosystem_test
+      DB_USER: ml_test_user
+      DB_PASSWORD: ml_test_password
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ml_test_redis_password
+      KAFKA_BROKERS: kafka-test:9093
+      LOG_LEVEL: silent
+    volumes:
+      - ./services/notification-service:/app
+      - /app/node_modules
+    networks:
+      - ml_test_network
+    depends_on:
+      - postgres-test
+      - redis-test
+      - kafka-test
+    command: npm run test:ci
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  analytics-service-test:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile.test
+    container_name: ml_analytics_service_test
+    restart: no
+    environment:
+      NODE_ENV: test
+      PORT: 3006
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_NAME: ml_ecosystem_test
+      DB_USER: ml_test_user
+      DB_PASSWORD: ml_test_password
+      MONGODB_HOST: mongodb-test
+      MONGODB_PORT: 27017
+      MONGODB_DB: ml_ecosystem_logs_test
+      MONGODB_USER: ml_test_admin
+      MONGODB_PASSWORD: ml_test_admin_password
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ml_test_redis_password
+      KAFKA_BROKERS: kafka-test:9093
+      LOG_LEVEL: silent
+    volumes:
+      - ./services/analytics-service:/app
+      - /app/node_modules
+    networks:
+      - ml_test_network
+    depends_on:
+      - postgres-test
+      - mongodb-test
+      - redis-test
+      - kafka-test
+    command: npm run test:ci
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+
+  # ===========================================
+  # TESTING UTILITIES
+  # ===========================================
+  
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-runner
+    container_name: ml_test_runner
+    restart: no
+    environment:
+      NODE_ENV: test
+      API_BASE_URL: http://nginx-test
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - test_results:/app/test-results
+      - test_coverage:/app/coverage
+    networks:
+      - ml_test_network
+    depends_on:
+      - user-service-test
+      - integration-service-test
+      - catalog-service-test
+      - inventory-service-test
+      - notification-service-test
+      - analytics-service-test
+    command: npm run test:e2e
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  nginx-test:
+    build:
+      context: ./infrastructure/nginx
+      dockerfile: Dockerfile.test
+    container_name: ml_nginx_test
+    restart: no
+    ports:
+      - "8888:80"
+    volumes:
+      - ./infrastructure/nginx/test/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - ml_test_network
+    depends_on:
+      - user-service-test
+      - integration-service-test
+      - catalog-service-test
+      - inventory-service-test
+      - notification-service-test
+      - analytics-service-test
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+
+# ===========================================
+# NETWORKS
+# ===========================================
+networks:
+  ml_test_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+
+# ===========================================
+# VOLUMES - TESTING
+# ===========================================
+volumes:
+  postgres_test_data:
+    driver: local
+  mongodb_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+  test_results:
+    driver: local
+  test_coverage:
+    driver: local

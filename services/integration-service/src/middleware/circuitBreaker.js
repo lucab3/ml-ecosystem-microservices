@@ -1,4 +1,4 @@
-const logger = require('../utils/mlRateLimiter');
+const logger = require('../utils/logger');
 const redis = require('../config/redis');
 
 /**

@@ -1,0 +1,20 @@
+[
+  {
+    "ml_item_id": "MLA123456789",
+    "title": "iPhone 14 Pro Max 256GB",
+    "category_id": "MLA1055",
+    "price": 899999.99,
+    "currency_id": "ARS",
+    "available_quantity": 5,
+    "condition": "new"
+  },
+  {
+    "ml_item_id": "MLA987654321",
+    "title": "Samsung Galaxy S23 Ultra",
+    "category_id": "MLA1055", 
+    "price": 749999.99,
+    "currency_id": "ARS",
+    "available_quantity": 3,
+    "condition": "new"
+  }
+]

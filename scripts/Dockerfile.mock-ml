@@ -1,0 +1,337 @@
+# Mock MercadoLibre API Server
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Create package.json for mock server
+COPY <<EOF package.json
+{
+  "name": "mock-ml-api",
+  "version": "1.0.0",
+  "description": "Mock MercadoLibre API for development",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.0"
+  }
+}
+EOF
+
+# Install dependencies
+RUN npm install
+
+# Copy mock server implementation
+COPY <<EOF server.js
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+
+const app = express();
+const PORT = process.env.PORT || 3333;
+
+// Middleware
+app.use(cors());
+app.use(morgan('combined'));
+app.use(express.json());
+
+// Mock data
+const mockUsers = {
+  '123456789': {
+    id: 123456789,
+    nickname: 'DEMOSELLER',
+    first_name: 'Demo',
+    last_name: 'Seller',
+    email: 'demo@example.com',
+    phone: { area_code: '11', number: '12345678' },
+    country_id: 'AR',
+    seller_reputation: {
+      transactions: { total: 150, completed: 145 },
+      power_seller_status: 'gold'
+    }
+  },
+  '987654321': {
+    id: 987654321,
+    nickname: 'TESTSELLER',
+    first_name: 'Test',
+    last_name: 'Seller',
+    email: 'seller@example.com',
+    phone: { area_code: '11', number: '87654321' },
+    country_id: 'AR',
+    seller_reputation: {
+      transactions: { total: 89, completed: 85 },
+      power_seller_status: 'silver'
+    }
+  }
+};
+
+const mockItems = {
+  'MLA123456789': {
+    id: 'MLA123456789',
+    title: 'iPhone 14 Pro Max 256GB Space Black',
+    category_id: 'MLA1055',
+    seller_id: 123456789,
+    price: 899999.99,
+    currency_id: 'ARS',
+    available_quantity: 5,
+    condition: 'new',
+    listing_type_id: 'gold_special',
+    permalink: 'https://articulo.mercadolibre.com.ar/MLA123456789',
+    thumbnail: 'https://http2.mlstatic.com/iphone.jpg',
+    pictures: [
+      { id: 'pic1', url: 'https://http2.mlstatic.com/iphone.jpg' }
+    ],
+    attributes: [
+      { id: 'BRAND', name: 'Marca', value_name: 'Apple' },
+      { id: 'MODEL', name: 'Modelo', value_name: 'iPhone 14 Pro Max' }
+    ],
+    shipping: { free_shipping: true }
+  },
+  'MLA987654321': {
+    id: 'MLA987654321',
+    title: 'Samsung Galaxy S23 Ultra 256GB',
+    category_id: 'MLA1055',
+    seller_id: 123456789,
+    price: 749999.99,
+    currency_id: 'ARS',
+    available_quantity: 3,
+    condition: 'new',
+    listing_type_id: 'gold_special',
+    permalink: 'https://articulo.mercadolibre.com.ar/MLA987654321',
+    thumbnail: 'https://http2.mlstatic.com/samsung.jpg',
+    pictures: [
+      { id: 'pic1', url: 'https://http2.mlstatic.com/samsung.jpg' }
+    ],
+    attributes: [
+      { id: 'BRAND', name: 'Marca', value_name: 'Samsung' },
+      { id: 'MODEL', name: 'Modelo', value_name: 'Galaxy S23 Ultra' }
+    ],
+    shipping: { free_shipping: true }
+  }
+};
+
+// Rate limiting store
+const rateLimitStore = new Map();
+
+// Rate limiting middleware
+function rateLimit(req, res, next) {
+  const key = req.ip + req.path;
+  const now = Date.now();
+  const windowMs = 60000; // 1 minute
+  const maxRequests = 10;
+
+  if (!rateLimitStore.has(key)) {
+    rateLimitStore.set(key, { count: 1, resetTime: now + windowMs });
+    return next();
+  }
+
+  const store = rateLimitStore.get(key);
+  if (now > store.resetTime) {
+    store.count = 1;
+    store.resetTime = now + windowMs;
+    return next();
+  }
+
+  store.count++;
+  if (store.count > maxRequests) {
+    return res.status(429).json({
+      error: 'too_many_requests',
+      message: 'Rate limit exceeded',
+      status: 429
+    });
+  }
+
+  next();
+}
+
+// Auth middleware
+function checkAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      error: 'unauthorized',
+      message: 'Access token required'
+    });
+  }
+  next();
+}
+
+// OAuth endpoints
+app.post('/oauth/token', (req, res) => {
+  const { grant_type, code, refresh_token } = req.body;
+  
+  if (grant_type === 'authorization_code' && code) {
+    return res.json({
+      access_token: 'mock_access_token_' + Date.now(),
+      token_type: 'Bearer',
+      expires_in: 21600,
+      scope: 'read write',
+      user_id: 123456789,
+      refresh_token: 'mock_refresh_token_' + Date.now()
+    });
+  }
+  
+  if (grant_type === 'refresh_token' && refresh_token) {
+    return res.json({
+      access_token: 'mock_access_token_refreshed_' + Date.now(),
+      token_type: 'Bearer',
+      expires_in: 21600,
+      scope: 'read write',
+      user_id: 123456789,
+      refresh_token: refresh_token
+    });
+  }
+  
+  res.status(400).json({
+    error: 'invalid_grant',
+    message: 'Invalid grant type or missing parameters'
+  });
+});
+
+// Sites endpoint
+app.get('/sites/MLA', (req, res) => {
+  res.json({
+    id: 'MLA',
+    name: 'Argentina',
+    country_id: 'AR',
+    default_currency_id: 'ARS',
+    categories: [
+      { id: 'MLA1055', name: 'Celulares y Teléfonos' },
+      { id: 'MLA1648', name: 'Computación' }
+    ]
+  });
+});
+
+// Categories endpoint
+app.get('/categories/:id', (req, res) => {
+  const categories = {
+    'MLA1055': {
+      id: 'MLA1055',
+      name: 'Celulares y Teléfonos',
+      path_from_root: [
+        { id: 'MLA1000', name: 'Electrónicos, Audio y Video' },
+        { id: 'MLA1055', name: 'Celulares y Teléfonos' }
+      ]
+    },
+    'MLA1648': {
+      id: 'MLA1648',
+      name: 'Computación',
+      path_from_root: [
+        { id: 'MLA1000', name: 'Electrónicos, Audio y Video' },
+        { id: 'MLA1648', name: 'Computación' }
+      ]
+    }
+  };
+  
+  const category = categories[req.params.id];
+  if (!category) {
+    return res.status(404).json({ error: 'not_found', message: 'Category not found' });
+  }
+  
+  res.json(category);
+});
+
+// User endpoints
+app.get('/users/me', checkAuth, rateLimit, (req, res) => {
+  res.json(mockUsers['123456789']);
+});
+
+app.get('/users/:id', rateLimit, (req, res) => {
+  const user = mockUsers[req.params.id];
+  if (!user) {
+    return res.status(404).json({ error: 'not_found', message: 'User not found' });
+  }
+  res.json(user);
+});
+
+// User items
+app.get('/users/:id/items/search', checkAuth, rateLimit, (req, res) => {
+  const userItems = Object.values(mockItems).filter(item => item.seller_id == req.params.id);
+  res.json({
+    user_id: req.params.id,
+    paging: { total: userItems.length, offset: 0, limit: 50 },
+    results: userItems
+  });
+});
+
+// Items endpoints
+app.get('/items/:id', rateLimit, (req, res) => {
+  const item = mockItems[req.params.id];
+  if (!item) {
+    return res.status(404).json({ error: 'not_found', message: 'Item not found' });
+  }
+  res.json(item);
+});
+
+app.put('/items/:id', checkAuth, rateLimit, (req, res) => {
+  const item = mockItems[req.params.id];
+  if (!item) {
+    return res.status(404).json({ error: 'not_found', message: 'Item not found' });
+  }
+  
+  // Update item with request data
+  Object.assign(item, req.body);
+  
+  res.json(item);
+});
+
+// Search endpoint
+app.get('/sites/MLA/search', rateLimit, (req, res) => {
+  const { q, category, seller_id } = req.query;
+  let results = Object.values(mockItems);
+  
+  if (q) {
+    results = results.filter(item => 
+      item.title.toLowerCase().includes(q.toLowerCase())
+    );
+  }
+  
+  if (category) {
+    results = results.filter(item => item.category_id === category);
+  }
+  
+  if (seller_id) {
+    results = results.filter(item => item.seller_id == seller_id);
+  }
+  
+  res.json({
+    site_id: 'MLA',
+    query: q,
+    paging: { total: results.length, offset: 0, limit: 50 },
+    results: results
+  });
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    error: 'internal_server_error',
+    message: 'Something went wrong!'
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    error: 'not_found',
+    message: 'Endpoint not found'
+  });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Mock ML API server running on port ${PORT}`);
+});
+EOF
+
+EXPOSE 3333
+
+CMD ["npm", "start"]

@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const Joi = require('joi');
 
-const logger = require('../utils/mlRateLimiter');
+const logger = require('../utils/logger');
 const redis = require('../config/redis');
 const { getUserTokens } = require('../services/userService');
 const rateLimiter = require('../utils/mlRateLimiter');
