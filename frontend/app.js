@@ -1,4 +1,4 @@
-// ML Ecosystem Frontend - Microservices Edition
+// ML Ecosystem Frontend - Microservices Edition with Real Authentication
 class MLStockMonitor {
     constructor() {
         this.apiBaseUrls = {
@@ -8,7 +8,9 @@ class MLStockMonitor {
         };
         
         this.products = [];
-        this.currentUser = { email: 'demo@example.com', name: 'Demo User' };
+        this.currentUser = null;
+        this.authToken = localStorage.getItem('auth_token');
+        this.monitoringInterval = null;
         
         this.init();
     }
@@ -19,9 +21,20 @@ class MLStockMonitor {
         // Check microservices status
         await this.checkMicroservicesStatus();
         
-        // Load initial data
-        await this.loadStats();
-        await this.loadProducts();
+        // Check authentication
+        if (this.authToken) {
+            await this.validateToken();
+        } else {
+            this.showLoginForm();
+            return;
+        }
+        
+        // Load initial data if authenticated
+        if (this.currentUser) {
+            await this.loadStats();
+            await this.loadUserProducts();
+            this.startMonitoring();
+        }
         
         console.log('✅ Frontend inicializado correctamente');
     }
@@ -375,25 +388,355 @@ class MLStockMonitor {
         }, 5000);
     }
 
-    logout() {
+    // =================== AUTHENTICATION FUNCTIONS ===================
+    
+    async validateToken() {
+        try {
+            const response = await fetch(`${this.apiBaseUrls.user}/api/users/me`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.authToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                this.currentUser = await response.json();
+                console.log('✅ Token válido, usuario:', this.currentUser);
+                this.showMainApp();
+            } else {
+                console.log('❌ Token inválido');
+                this.authToken = null;
+                localStorage.removeItem('auth_token');
+                this.showLoginForm();
+            }
+        } catch (error) {
+            console.error('Error validating token:', error);
+            this.showLoginForm();
+        }
+    }
+
+    showLoginForm() {
+        document.getElementById('mainApp').style.display = 'none';
+        
+        // Create login form if it doesn't exist
+        let loginForm = document.getElementById('loginForm');
+        if (!loginForm) {
+            loginForm = document.createElement('div');
+            loginForm.id = 'loginForm';
+            loginForm.innerHTML = `
+                <div class="container mt-5">
+                    <div class="row justify-content-center">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4>🔐 ML Stock Monitor - Login</h4>
+                                </div>
+                                <div class="card-body">
+                                    <form id="loginFormElement">
+                                        <div class="mb-3">
+                                            <label for="email" class="form-label">Email</label>
+                                            <input type="email" class="form-control" id="email" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="password" class="form-label">Password</label>
+                                            <input type="password" class="form-control" id="password" required>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary w-100">Login</button>
+                                    </form>
+                                    <hr>
+                                    <button id="mlConnectBtn" class="btn btn-success w-100">
+                                        <i class="fab fa-amazon"></i> Conectar con MercadoLibre
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(loginForm);
+            
+            // Add event listeners
+            document.getElementById('loginFormElement').addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.login();
+            });
+            
+            document.getElementById('mlConnectBtn').addEventListener('click', () => {
+                this.connectToMercadoLibre();
+            });
+        }
+        
+        loginForm.style.display = 'block';
+    }
+
+    showMainApp() {
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.style.display = 'none';
+        }
+        document.getElementById('mainApp').style.display = 'block';
+        
+        // Update user info in UI
+        const userInfo = document.getElementById('userInfo');
+        if (userInfo && this.currentUser) {
+            userInfo.innerHTML = `
+                <i class="fas fa-user"></i> ${this.currentUser.firstName} ${this.currentUser.lastName}
+                <small class="text-muted">(${this.currentUser.email})</small>
+            `;
+        }
+    }
+
+    async login() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        try {
+            const response = await fetch(`${this.apiBaseUrls.user}/api/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.authToken = data.data.token;
+                this.currentUser = data.data;
+                localStorage.setItem('auth_token', this.authToken);
+                this.showMainApp();
+                await this.loadStats();
+                await this.loadUserProducts();
+                this.startMonitoring();
+                this.showSuccess('¡Login exitoso!');
+            } else {
+                this.showError(data.message || 'Error en el login');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            this.showError('Error de conexión');
+        }
+    }
+
+    async connectToMercadoLibre() {
+        try {
+            if (!this.authToken) {
+                this.showError('Debes hacer login primero');
+                return;
+            }
+
+            const response = await fetch(`${this.apiBaseUrls.user}/api/auth/ml/connect`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.authToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                window.open(data.authUrl, '_blank');
+                this.showSuccess('Redirigiendo a MercadoLibre...');
+            } else {
+                this.showError(data.message || 'Error conectando con ML');
+            }
+        } catch (error) {
+            console.error('ML Connect error:', error);
+            this.showError('Error de conexión con MercadoLibre');
+        }
+    }
+
+    // =================== PRODUCT MONITORING FUNCTIONS ===================
+
+    async loadUserProducts() {
+        const container = document.getElementById('productsContainer');
+        const spinner = document.getElementById('loadingSpinner');
+        const emptyState = document.getElementById('emptyState');
+        
+        if (!this.authToken) {
+            this.showError('No estás autenticado');
+            return;
+        }
+
+        // Show loading
+        spinner.style.display = 'block';
+        container.innerHTML = '';
+        emptyState.style.display = 'none';
+
+        try {
+            const response = await fetch(`${this.apiBaseUrls.integration}/api/ml/user/products/monitoring`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.authToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                const monitoringData = data.data;
+                this.updateMonitoringStats(monitoringData);
+                this.renderProducts(monitoringData.lowStockProducts || [], container);
+                
+                if (monitoringData.lowStockProducts.length === 0) {
+                    emptyState.style.display = 'block';
+                    emptyState.innerHTML = `
+                        <div class="text-center">
+                            <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+                            <h5>¡Excelente!</h5>
+                            <p>No tienes productos con bajo stock</p>
+                            <p class="text-muted">Total de productos activos: ${monitoringData.totalProducts}</p>
+                        </div>
+                    `;
+                }
+            } else {
+                this.showError(data.message || 'Error cargando productos');
+                emptyState.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error loading user products:', error);
+            this.showError('Error de conexión');
+            emptyState.style.display = 'block';
+        } finally {
+            spinner.style.display = 'none';
+        }
+    }
+
+    updateMonitoringStats(data) {
+        // Update dashboard stats
+        document.getElementById('totalProducts').textContent = data.totalProducts || 0;
+        document.getElementById('activeProducts').textContent = data.activeProducts || 0;
+        document.getElementById('lowStockCount').textContent = data.alertCount || 0;
+        document.getElementById('criticalStockCount').textContent = data.summary?.criticalStock || 0;
+        
+        // Update alert badge
+        const alertBadge = document.getElementById('alertBadge');
+        if (alertBadge) {
+            alertBadge.textContent = data.alertCount || 0;
+            alertBadge.className = data.alertCount > 0 ? 'badge bg-danger ms-2' : 'badge bg-success ms-2';
+        }
+        
+        // Update last update time
+        const lastUpdate = document.getElementById('lastUpdate');
+        if (lastUpdate && data.lastUpdated) {
+            lastUpdate.textContent = new Date(data.lastUpdated).toLocaleString();
+        }
+    }
+
+    renderProducts(products, container) {
+        if (products.length === 0) return;
+
+        products.forEach(product => {
+            const productCard = document.createElement('div');
+            productCard.className = 'col-md-6 col-lg-4 mb-4';
+            
+            const alertClass = product.stockAlert.severity === 'critical' ? 'border-danger' : 'border-warning';
+            const alertIcon = product.stockAlert.severity === 'critical' ? 'fas fa-exclamation-triangle text-danger' : 'fas fa-exclamation-circle text-warning';
+            
+            productCard.innerHTML = `
+                <div class="card h-100 ${alertClass}">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <small class="text-muted">${product.id}</small>
+                        <span class="badge bg-${product.stockAlert.severity === 'critical' ? 'danger' : 'warning'}">
+                            ${product.stockAlert.severity === 'critical' ? 'CRÍTICO' : 'ALERTA'}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="card-title">${product.title}</h6>
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <strong>Precio:</strong><br>
+                                <span class="text-success">$${product.price.toLocaleString()} ${product.currency_id}</span>
+                            </div>
+                            <div class="col-6">
+                                <strong>Vendidos:</strong><br>
+                                <span class="text-info">${product.sold_quantity}</span>
+                            </div>
+                        </div>
+                        <div class="alert alert-${product.stockAlert.severity === 'critical' ? 'danger' : 'warning'} p-2">
+                            <i class="${alertIcon}"></i>
+                            <strong>Stock actual: ${product.stockAlert.currentStock}</strong><br>
+                            <small>Límite: ${product.stockAlert.threshold}</small>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <a href="${product.permalink}" target="_blank" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-external-link-alt"></i> Ver en ML
+                        </a>
+                    </div>
+                </div>
+            `;
+            
+            container.appendChild(productCard);
+        });
+    }
+
+    startMonitoring() {
+        // Clear existing interval
+        if (this.monitoringInterval) {
+            clearInterval(this.monitoringInterval);
+        }
+
+        // Start monitoring every 30 minutes
+        const intervalMinutes = parseInt(process.env.MONITORING_INTERVAL_MINUTES) || 30;
+        this.monitoringInterval = setInterval(() => {
+            this.loadUserProducts();
+        }, intervalMinutes * 60 * 1000);
+
+        console.log(`✅ Monitoreo iniciado (cada ${intervalMinutes} minutos)`);
+    }
+
+    async logout() {
         if (confirm('¿Estás seguro que quieres cerrar sesión?')) {
-            // In a real app, would call logout API
-            alert('Sesión cerrada (modo demo)');
+            try {
+                await fetch(`${this.apiBaseUrls.user}/api/auth/logout`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${this.authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+
+            // Clear local data
+            this.authToken = null;
+            this.currentUser = null;
+            localStorage.removeItem('auth_token');
+            
+            if (this.monitoringInterval) {
+                clearInterval(this.monitoringInterval);
+                this.monitoringInterval = null;
+            }
+            
+            this.showLoginForm();
+            this.showSuccess('Sesión cerrada correctamente');
         }
     }
 }
 
 // Global functions for HTML onclick handlers
 function searchProducts() {
-    window.mlApp.searchProducts();
+    if (window.mlApp.loadUserProducts) {
+        window.mlApp.loadUserProducts();
+    }
 }
 
 function filterByCategory() {
-    window.mlApp.filterByCategory();
+    if (window.mlApp.loadUserProducts) {
+        window.mlApp.loadUserProducts();
+    }
 }
 
 function loadProducts() {
-    window.mlApp.loadProducts();
+    if (window.mlApp.loadUserProducts) {
+        window.mlApp.loadUserProducts();
+    }
 }
 
 function showProductDetails(productId) {

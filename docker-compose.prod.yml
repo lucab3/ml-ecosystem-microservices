@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Production Database with real schema only
+  postgres:
+    image: postgres:14-alpine
+    container_name: ml-ecosystem-postgres-prod
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ml_ecosystem}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+      - ./scripts/init-db-schema.sql:/docker-entrypoint-initdb.d/init-db-schema.sql
+      # NO test data script for production
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ml_ecosystem}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ml-ecosystem-prod
+
+  # Redis - Production Cache and Rate Limiting
+  redis:
+    image: redis:6-alpine
+    container_name: ml-ecosystem-redis-prod
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ml-ecosystem-prod
+
+  # MongoDB - Production Catalog Service
+  mongodb:
+    image: mongo:5-focal
+    container_name: ml-ecosystem-mongodb-prod
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGODB_DB:-ml_ecosystem}
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data_prod:/data/db
+      # NO test data for production - only real ML categories when needed
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD}@localhost:27017/${MONGODB_DB:-ml_ecosystem} --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ml-ecosystem-prod
+
+  # Zookeeper for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: ml-ecosystem-zookeeper-prod
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data_prod:/var/lib/zookeeper/data
+      - zookeeper_logs_prod:/var/lib/zookeeper/log
+    restart: unless-stopped
+    networks:
+      - ml-ecosystem-prod
+
+  # Kafka - Production Message Streaming
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: ml-ecosystem-kafka-prod
+    depends_on:
+      - zookeeper
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_DELETE_TOPIC_ENABLE: true
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+    volumes:
+      - kafka_data_prod:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ml-ecosystem-prod
+
+networks:
+  ml-ecosystem-prod:
+    driver: bridge
+
+volumes:
+  postgres_data_prod:
+    driver: local
+  redis_data_prod:
+    driver: local
+  mongodb_data_prod:
+    driver: local
+  zookeeper_data_prod:
+    driver: local
+  zookeeper_logs_prod:
+    driver: local
+  kafka_data_prod:
+    driver: local

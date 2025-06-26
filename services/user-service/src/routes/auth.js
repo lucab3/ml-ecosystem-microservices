@@ -347,6 +347,37 @@ router.post('/ml/callback', async (req, res) => {
 
     const mlUserData = userResponse.data;
 
+    // 🔒 AUTHORIZATION CHECK: Verify if ML user is in allowed list
+    const authorizedUsers = process.env.AUTHORIZED_ML_USERS?.split(',').map(id => id.trim()) || [];
+    const mlUserId = String(user_id);
+    
+    if (authorizedUsers.length > 0 && !authorizedUsers.includes(mlUserId)) {
+      logger.warn('Unauthorized ML user attempted access', { 
+        mlUserId,
+        mlUserEmail: mlUserData.email,
+        mlUserNickname: mlUserData.nickname,
+        authorizedCount: authorizedUsers.length,
+        timestamp: new Date().toISOString()
+      });
+      
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Tu cuenta de MercadoLibre no está autorizada para usar esta aplicación. Contacta al administrador para solicitar acceso.',
+        details: {
+          mlUserId,
+          mlUserEmail: mlUserData.email,
+          mlUserNickname: mlUserData.nickname,
+          reason: 'User not in authorized list'
+        }
+      });
+    }
+
+    logger.info('Authorized ML user connecting', { 
+      mlUserId,
+      mlUserEmail: mlUserData.email,
+      mlUserNickname: mlUserData.nickname
+    });
+
     // Save tokens and ML user data
     const userId = req.user?.userId;
     if (userId) {

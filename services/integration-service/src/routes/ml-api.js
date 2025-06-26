@@ -495,6 +495,228 @@ router.get('/sites/:siteId/search', async (req, res) => {
  * GET /api/ml/health
  * Health check específico de ML API
  */
+/**
+ * GET /api/ml/user/products/monitoring
+ * Monitoreo de productos del usuario con alertas de stock
+ */
+router.get('/user/products/monitoring', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const tokens = await getUserTokens(userId);
+    
+    if (!tokens || !tokens.access_token) {
+      return res.status(401).json({
+        error: 'No ML tokens found',
+        message: 'User needs to re-authenticate with MercadoLibre'
+      });
+    }
+
+    const cacheKey = `ml_monitoring:${userId}`;
+    
+    // Intentar obtener desde cache
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return res.json({
+        success: true,
+        cached: true,
+        data: cached
+      });
+    }
+
+    // Obtener productos del usuario
+    const productsData = await makeMLRequest(`/users/${tokens.user_id}/items/search?status=active`, {
+      accessToken: tokens.access_token,
+      cacheKey: `ml_user_products:${userId}`,
+      cacheTTL: CACHE_TTL.PRODUCTS
+    });
+
+    if (!productsData.results || productsData.results.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          totalProducts: 0,
+          lowStockProducts: [],
+          alertCount: 0,
+          message: 'No active products found'
+        }
+      });
+    }
+
+    // Obtener detalles de cada producto para verificar stock
+    const lowStockThreshold = parseInt(process.env.LOW_STOCK_THRESHOLD) || 5;
+    const productDetails = [];
+    const lowStockProducts = [];
+
+    for (const productId of productsData.results) {
+      try {
+        const detail = await makeMLRequest(`/items/${productId}`, {
+          accessToken: tokens.access_token,
+          cacheKey: `ml_product:${productId}`,
+          cacheTTL: CACHE_TTL.PRODUCT_DETAIL
+        });
+
+        const productInfo = {
+          id: detail.id,
+          title: detail.title,
+          permalink: detail.permalink,
+          thumbnail: detail.thumbnail,
+          price: detail.price,
+          currency_id: detail.currency_id,
+          available_quantity: detail.available_quantity,
+          sold_quantity: detail.sold_quantity,
+          status: detail.status,
+          condition: detail.condition,
+          category_id: detail.category_id
+        };
+
+        productDetails.push(productInfo);
+
+        // Verificar si está en bajo stock
+        if (detail.available_quantity <= lowStockThreshold && detail.status === 'active') {
+          lowStockProducts.push({
+            ...productInfo,
+            stockAlert: {
+              currentStock: detail.available_quantity,
+              threshold: lowStockThreshold,
+              severity: detail.available_quantity === 0 ? 'critical' : 'warning'
+            }
+          });
+        }
+
+      } catch (error) {
+        logger.warn('Error fetching product detail for monitoring', { 
+          productId, 
+          userId, 
+          error: error.message 
+        });
+      }
+    }
+
+    const monitoringData = {
+      userId,
+      mlUserId: tokens.user_id,
+      totalProducts: productDetails.length,
+      activeProducts: productDetails.filter(p => p.status === 'active').length,
+      lowStockProducts,
+      alertCount: lowStockProducts.length,
+      lowStockThreshold,
+      lastUpdated: new Date().toISOString(),
+      summary: {
+        criticalStock: lowStockProducts.filter(p => p.stockAlert.severity === 'critical').length,
+        warningStock: lowStockProducts.filter(p => p.stockAlert.severity === 'warning').length,
+        totalValue: productDetails.reduce((sum, p) => sum + (p.price * p.available_quantity), 0)
+      }
+    };
+
+    // Guardar en cache por 30 minutos
+    await redis.set(cacheKey, monitoringData, 1800);
+
+    // Enviar evento si hay productos en bajo stock
+    if (lowStockProducts.length > 0) {
+      await kafkaProducer.sendEvent('stock.low_stock_alert', {
+        userId,
+        mlUserId: tokens.user_id,
+        alertCount: lowStockProducts.length,
+        products: lowStockProducts.map(p => ({
+          id: p.id,
+          title: p.title,
+          currentStock: p.stockAlert.currentStock,
+          severity: p.stockAlert.severity
+        })),
+        timestamp: Date.now()
+      });
+
+      logger.warn('Low stock alert generated', {
+        userId,
+        mlUserId: tokens.user_id,
+        alertCount: lowStockProducts.length,
+        criticalCount: monitoringData.summary.criticalStock
+      });
+    }
+
+    res.json({
+      success: true,
+      cached: false,
+      data: monitoringData
+    });
+
+  } catch (error) {
+    logger.error('Product monitoring error:', error);
+    
+    if (error.message === 'RATE_LIMIT_EXCEEDED') {
+      return res.status(429).json({
+        error: 'Rate limit exceeded',
+        message: 'Too many requests. Please try again later.'
+      });
+    }
+
+    if (error.message === 'INVALID_TOKEN') {
+      return res.status(401).json({
+        error: 'Invalid ML token',
+        message: 'Please re-authenticate with MercadoLibre'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Monitoring failed',
+      message: 'Failed to fetch product monitoring data'
+    });
+  }
+});
+
+/**
+ * GET /api/ml/user/products/alerts
+ * Solo productos con alertas de bajo stock
+ */
+router.get('/user/products/alerts', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const tokens = await getUserTokens(userId);
+    
+    if (!tokens || !tokens.access_token) {
+      return res.status(401).json({
+        error: 'No ML tokens found',
+        message: 'User needs to re-authenticate with MercadoLibre'
+      });
+    }
+
+    // Obtener datos de monitoreo desde cache o generar nuevos
+    const cacheKey = `ml_monitoring:${userId}`;
+    let monitoringData = await redis.get(cacheKey);
+    
+    if (!monitoringData) {
+      // Si no hay cache, hacer una llamada completa al monitoreo
+      const monitoringResponse = await req.app.request({
+        method: 'GET',
+        url: `/api/ml/user/products/monitoring`,
+        headers: req.headers
+      });
+      monitoringData = monitoringResponse.data;
+    }
+
+    const lowStockProducts = monitoringData.lowStockProducts || [];
+
+    res.json({
+      success: true,
+      data: {
+        alertCount: lowStockProducts.length,
+        criticalCount: lowStockProducts.filter(p => p.stockAlert.severity === 'critical').length,
+        warningCount: lowStockProducts.filter(p => p.stockAlert.severity === 'warning').length,
+        alerts: lowStockProducts,
+        lastUpdated: monitoringData.lastUpdated,
+        threshold: monitoringData.lowStockThreshold
+      }
+    });
+
+  } catch (error) {
+    logger.error('Product alerts error:', error);
+    res.status(500).json({
+      error: 'Alerts fetch failed',
+      message: 'Failed to fetch product alerts'
+    });
+  }
+});
+
 router.get('/health', async (req, res) => {
   try {
     // Test simple a ML API sin autenticación

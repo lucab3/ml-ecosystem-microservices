@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ML Stock Monitor - Microservices Edition</title>
+    <title>ML Stock Monitor - Monitoreo de Inventario con MercadoLibre</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -61,8 +61,8 @@
                 <small class="badge bg-primary ms-2">Microservices</small>
             </a>
             <div class="navbar-nav ms-auto">
-                <span class="navbar-text text-white me-3">
-                    <i class="fas fa-user"></i> <span id="currentUser">Demo User</span>
+                <span class="navbar-text text-white me-3" id="userInfo">
+                    <i class="fas fa-user"></i> Conectando...
                 </span>
                 <button class="btn btn-outline-light btn-sm" onclick="logout()">
                     <i class="fas fa-sign-out-alt"></i> Salir
@@ -117,53 +117,64 @@
     </div>
 
     <!-- Main Content -->
-    <div class="container mt-4">
-        <!-- Search and Filters -->
+    <div class="container mt-4" id="mainApp">
+        <!-- Stock Monitoring Dashboard -->
         <div class="row mb-4">
-            <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header">
-                        <i class="fas fa-search"></i> Buscar Productos
+            <div class="col-12">
+                <div class="card border-warning">
+                    <div class="card-header bg-warning text-dark">
+                        <i class="fas fa-exclamation-triangle"></i> Monitor de Stock en Tiempo Real
                     </div>
                     <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-md-3">
+                                <div class="h4 mb-0 text-primary" id="totalProducts">0</div>
+                                <small class="text-muted">Total Productos</small>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="h4 mb-0 text-success" id="activeProducts">0</div>
+                                <small class="text-muted">Activos</small>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="h4 mb-0 text-warning" id="lowStockCount">0</div>
+                                <small class="text-muted">Bajo Stock</small>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="h4 mb-0 text-danger" id="criticalStockCount">0</div>
+                                <small class="text-muted">Stock Crítico</small>
+                            </div>
+                        </div>
+                        <hr>
                         <div class="row">
                             <div class="col-md-6">
-                                <input type="text" class="form-control" id="searchInput" 
-                                       placeholder="Buscar productos..." onkeyup="searchProducts()">
+                                <small class="text-muted">
+                                    <i class="fas fa-clock"></i> Última actualización: 
+                                    <span id="lastUpdate">Nunca</span>
+                                </small>
                             </div>
-                            <div class="col-md-4">
-                                <select class="form-select" id="categoryFilter" onchange="filterByCategory()">
-                                    <option value="">Todas las categorías</option>
-                                    <option value="MLA1055">Celulares y Teléfonos</option>
-                                    <option value="MLA1648">Computación</option>
-                                    <option value="MLA1276">Deportes y Fitness</option>
-                                </select>
-                            </div>
-                            <div class="col-md-2">
-                                <button class="btn btn-primary w-100" onclick="loadProducts()">
-                                    <i class="fas fa-sync-alt"></i> Actualizar
+                            <div class="col-md-6 text-end">
+                                <button class="btn btn-outline-primary btn-sm" onclick="loadProducts()">
+                                    <i class="fas fa-sync-alt"></i> Actualizar Ahora
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
+        </div>
+
+        <!-- Alert Section -->
+        <div class="row mb-4">
+            <div class="col-12">
                 <div class="card">
                     <div class="card-header">
-                        <i class="fas fa-chart-line"></i> Estadísticas
+                        <i class="fas fa-bell"></i> Alertas de Bajo Stock
+                        <span class="badge bg-danger ms-2" id="alertBadge">0</span>
                     </div>
                     <div class="card-body">
-                        <div class="row text-center">
-                            <div class="col-6">
-                                <div class="h5 mb-0" id="totalProducts">0</div>
-                                <small class="text-muted">Productos</small>
-                            </div>
-                            <div class="col-6">
-                                <div class="h5 mb-0" id="totalUsers">0</div>
-                                <small class="text-muted">Usuarios</small>
-                            </div>
-                        </div>
+                        <p class="text-muted mb-3">
+                            Los productos con stock menor o igual a <strong>5 unidades</strong> aparecen aquí.
+                        </p>
                     </div>
                 </div>
             </div>
